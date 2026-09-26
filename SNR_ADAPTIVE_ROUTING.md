@@ -100,6 +100,9 @@ Each trigger prints a line such as:
 | `--snrAlpha` | 0.3 | EWMA weight of the newest sample |
 | `--lowWindows` | 3 | Consecutive low 1 s windows before rerouting |
 | `--RngRun` | 1 | Random seed (built-in ns-3 option) |
+| `--spreadStart` | 0 | 1 = random starting positions (0 = all nodes start at (0,0)) |
+| `--aodvQueueLen` | 1000 | AODV request queue length |
+| `--animFile` | empty | NetAnim XML output path |
 
 ## 4. How to run it
 
@@ -135,8 +138,43 @@ fresh checkout should not hit this.
 
 ## 5. Results
 
-Setup: 30 nodes, 40 s per run, 5 seeds per point. The same seed gives the same
-mobility and traffic in both modes, so runs can be compared in pairs.
+Setup for both tables: 30 nodes, 40 s per run, 5 seeds per point. The same seed
+gives the same mobility and traffic in both modes, so runs are compared in
+pairs (adaptive minus conventional on the same seed).
+
+### 5.1 Nodes spread over the area (`--spreadStart=1`, recommended)
+
+Data: `sweep_results_spread.csv`; figures: `thesis_figures_spread/`.
+
+Plain AODV delivers only about 13% of packets here (per seed 2% to 26%) because
+the layout is mostly disconnected. Paired difference in packet delivery ratio
+(percentage points) with 95% confidence interval:
+
+| Threshold | Delta PDR | 95% CI | Seeds improved |
+|---|---|---|---|
+| 10 dB | +0.0 | -0.02 to 0.06 | 1/5 |
+| 11 dB | +0.3 | -0.09 to 0.64 | 2/5 |
+| 12 dB | +0.5 | 0.06 to 0.89 | 3/5 |
+| 13 dB | +2.0 | 0.74 to 3.22 | 5/5 |
+| 14 dB | +3.9 | 1.44 to 6.38 | 5/5 |
+| 15 dB | +4.9 | 1.80 to 8.10 | 5/5 |
+| 16 dB | +5.3 | 2.15 to 8.52 | 5/5 |
+| 17 dB | +6.2 | 2.33 to 9.98 | 5/5 |
+| 18 dB | +6.4 | 2.04 to 10.85 | 5/5 |
+| 19 dB | +5.8 | 2.37 to 9.21 | 5/5 |
+| 20 dB | +5.3 | 2.05 to 8.45 | 5/5 |
+
+- From 13 dB up, every seed improves and every interval excludes zero. Mean
+  delay also falls by roughly 80 to 130 ms at those thresholds.
+- Reroutes per run grow with the threshold, from about 6 at 10 dB to about 410
+  at 20 dB.
+- The absolute gain is small (a few points on a base of about 13%), and 5 seeds
+  is few, so this is encouraging but not conclusive.
+
+### 5.2 Legacy layout (all nodes start at (0,0))
+
+Data: `sweep_results.csv`; figures: `thesis_figures/`. All nodes start in a
+corner, forming a dense cluster (see limitations).
 
 | Config | Reroutes per run | PDR % | Delay ms | Throughput Mbps |
 |---|---|---|---|---|
@@ -145,28 +183,10 @@ mobility and traffic in both modes, so runs can be compared in pairs.
 | Adaptive, 15 dB | 1241 | 84.6 +/- 4.7 | 101.2 +/- 12.7 | 0.163 |
 | Adaptive, 20 dB | 2896 | 84.0 +/- 5.3 | 106.1 +/- 21.3 | 0.160 |
 
-(mean +/- standard deviation across seeds; other thresholds behave similarly,
-see `sweep_results.csv`.)
-
-What the figures show:
-
-- **Reroute count rises steadily with threshold**, from about 50 at 10 dB to
-  about 2,900 at 20 dB. The trigger works.
-- **Delivery, loss, delay and throughput are mostly indistinguishable from
-  conventional AODV.** Adaptive means sit inside the baseline's spread, and the
-  paired per-seed differences mostly have confidence intervals that include
-  zero. Loss is simply the mirror of PDR.
-- **Reroute cost vs delivery:** runs with about 3,000 reroutes deliver about as
-  well as runs with about 50.
-- **One possible exception:** at 15 dB, delay is about 14 ms lower and
-  throughput about 0.007 Mbps higher, with intervals that stay clear of zero.
-  This is weak evidence: 11 thresholds and 4 metrics were examined with only 5
-  seeds, so a couple of "significant" points can appear by chance, and
-  neighbouring thresholds do not confirm it.
-- **Defaults do nothing here.** With the default 8 dB threshold, smoothing and
-  3-window rule, the adaptive results were identical to conventional to every
-  digit in an early test. The few reroutes that fired evidently hit neighbours
-  that were not next hops on any active route.
+(mean +/- standard deviation across seeds.) In this dense layout adaptive
+results sit inside the baseline's spread at every threshold and the paired
+differences mostly include zero: no clear effect. Reroute count rises steadily
+with threshold (about 50 to about 2,900) but delivery does not follow.
 
 ## 6. Interpretation and limitations
 
@@ -175,10 +195,15 @@ What the figures show:
   `RangePropagationLossModel`, so SNR falls gradually with distance but there
   is no fading. Whether adding fading (for example Nakagami) would give the
   SNR trigger more useful lead time is untested.
-- **Starting positions (bug).** All nodes start at (0,0) because no starting
-  position allocator is set, so the results below describe a dense cluster,
-  not a 600 x 600 m spread. Fixing it exposes a separate stall in stock
-  AODV; see `HANDOVER_GUIDE.md`, section 9.
+- **Starting positions.** The original scenario started every node at (0,0)
+  because no starting-position allocator was set. `--spreadStart=1` fixes this
+  (section 5.1); the legacy behaviour remains the default so old results
+  reproduce. See `HANDOVER_GUIDE.md`, section 9.
+- **Sparse spread layout.** With nodes spread over 600 x 600 m the network is
+  mostly disconnected (baseline PDR about 13%), which limits how much any
+  routing change can achieve.
+- **Simulator workaround.** ns-3's default AODV request queue (64) can livelock
+  the simulation; the scenario sets it to 1000. Details in the handover guide.
 - **Mobility.** Speeds of 1-5 m/s are slow. Faster nodes make links degrade
   and break more abruptly, which is where early rerouting should matter more.
 - **AODV is already reactive** through MAC-layer failure detection, so it may
@@ -192,10 +217,11 @@ What the figures show:
 
 ## 7. Suggested next steps
 
-1. Switch to a log-distance plus fading propagation model and rerun the sweep.
-2. Raise node speed (for example 10-20 m/s) and vary node count.
-3. Run 20 or more seeds, at least at 15 dB versus the baseline, to test the
-   possible delay and throughput gain.
-4. Measure routing overhead (RREQ/RERR counts) alongside PDR and delay.
-5. Add an animation (NetAnim is already built in this tree) to show nodes
-   moving and routes switching.
+1. Use a denser scenario with `--spreadStart=1` (smaller area or more nodes) so
+   the baseline delivery ratio is not so low, and rerun the sweep.
+2. Run 20 or more seeds to tighten the confidence intervals.
+3. Raise node speed (for example 10-20 m/s) and vary node count.
+4. Add a fading model on top of log-distance loss.
+5. Measure routing overhead (RREQ/RERR counts) alongside PDR and delay.
+6. Play the NetAnim output (`--animFile`) to show nodes moving and routes
+   switching.

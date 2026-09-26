@@ -47,8 +47,10 @@ The NetAnim viewer is optional and is a separate application (section 8).
 | `utils/snr-threshold-sweep.py` | Runs the threshold x seed sweep, writes `sweep_results.csv` |
 | `utils/plot-snr-sweep.py` | Three overview figures from the CSV |
 | `utils/plot-snr-thesis.py` | Ten individual thesis-style figures (PDF + PNG) |
-| `sweep_results.csv` | Results of the last sweep (60 runs) |
-| `thesis_figures/` | Generated individual figures |
+| `sweep_results_spread.csv` | Sweep results, nodes spread over the area (60 runs, recommended) |
+| `thesis_figures_spread/` | Individual figures for that sweep |
+| `sweep_results.csv` | Legacy sweep, all nodes start at (0,0) (60 runs) |
+| `thesis_figures/` | Individual figures for the legacy sweep |
 | `SNR_ADAPTIVE_ROUTING.md` | Design, results and interpretation |
 | `HANDOVER_GUIDE.md` | This file |
 
@@ -122,42 +124,43 @@ traffic, which is what makes paired comparison valid.
 | `--lowWindows` | 3 | Consecutive low 1 s windows required before rerouting |
 | `--RngRun` | 1 | Random seed (built-in ns-3 option) |
 | `--animFile` | empty | Path of a NetAnim XML to write (empty = off) |
+| `--spreadStart` | 0 | 1 = start nodes at random positions (0 = all nodes start at (0,0), the legacy behaviour) |
+| `--aodvQueueLen` | 1000 | AODV request queue length (ns-3 default 64 can livelock, see known issues) |
 
 List all options with `./ns3 run "snr-adaptive-routing --PrintHelp"`.
 
 ## 6. Reproduce the sweep and the figures
 
-Run from the repository root, after building:
+Run from the ns-3 root, after building:
 
 ```bash
+# recommended: nodes spread over the area
+python3 utils/snr-threshold-sweep.py --spreadStart=1 --out=sweep_results_spread.csv
+python3 utils/plot-snr-thesis.py sweep_results_spread.csv thesis_figures_spread
+
+# legacy: all nodes start at (0,0)
 python3 utils/snr-threshold-sweep.py
+python3 utils/plot-snr-thesis.py
+python3 utils/plot-snr-sweep.py sweep_results.csv .
 ```
 
 - Runs conventional AODV once per seed and adaptive at every threshold from 10
   to 20 dB, for seeds 1 to 5 (60 runs, 30 nodes, 40 s each), six in parallel.
-- Takes about 1 to 2 minutes.
-- Overwrites `sweep_results.csv` in the current directory.
+  Takes about 1 to 2 minutes.
+- Any other arguments you pass are forwarded to the simulation, and
+  `--out=<file>` sets the output CSV (default `sweep_results.csv`).
 - Uses `./ns3 run --no-build`, so build first; it will not rebuild for you.
 
 CSV columns: `protocol, threshold, seed, reroutes, throughput_mbps, pdr,
 delay_ms, loss`. Conventional rows have `threshold = 0` and `reroutes = 0`.
 
-Overview figures (three PNGs):
-
-```bash
-python3 utils/plot-snr-sweep.py sweep_results.csv .
-```
-
-Individual thesis figures (PDF and 300 dpi PNG, written to `thesis_figures/`):
-
-```bash
-python3 utils/plot-snr-thesis.py
-```
+`plot-snr-thesis.py [csv] [outdir]` writes the ten individual figures (PDF and
+300 dpi PNG). `plot-snr-sweep.py [csv] [outdir]` writes three overview PNGs.
 
 To change the sweep (seeds, thresholds, node count, duration) edit the
 `seeds`, `thresholds` and command string at the top of
-`utils/snr-threshold-sweep.py`. The figure scripts adapt to whatever is in the
-CSV. If you change the number of seeds, regenerate the figures.
+`utils/snr-threshold-sweep.py`. If you change the number of seeds, regenerate
+the figures.
 
 ### Figures produced by `plot-snr-thesis.py`
 
@@ -215,44 +218,50 @@ playback in the viewer has not been tested on the original machine.
 
 ## 9. Known issues (read before trusting results)
 
-1. **All nodes start at position (0,0).** The mobility setup passes a
-   `PositionAllocator` to `RandomWaypointMobilityModel`, but that attribute
-   only chooses where nodes walk *to*. No starting-position allocator is set
-   (`mobility.SetPositionAllocator(posAlloc)` is missing before
-   `mobility.Install`), so every node starts in the corner and spreads out from
-   there. In the animation data no node had travelled further than about 106 m
-   from the origin after 25 s, so the network is a dense cluster rather than
-   nodes spread over 600 x 600 m. This affects **every result in
-   `sweep_results.csv`, the figures and `SNR_ADAPTIVE_ROUTING.md`**.
-   **The one-line fix is not applied in this repository**, because applying it
-   exposes issue 1b.
-
-   1b. **Stock AODV stalls when nodes start spread out.** With the start-position
-   line added, the simulation stops advancing at about 18-19 s of simulated
-   time and burns CPU indefinitely. This was seen with `--nNodes=30 --simTime=40`
-   on seeds 1 to 6 in `conventional` mode (no SNR code involved) and in
-   `adaptive` mode, so it is not caused by `ForceLinkFailure`. A stack sample
-   of the stuck process showed it inside `LoopbackNetDevice::Receive` ->
-   `Ipv4L3Protocol::Receive`/`Send` -> `aodv::RoutingProtocol::RouteOutput` /
-   `DeferredRouteOutput`, i.e. packets circulating through the loopback device
-   at a single simulation time. The root cause has not been found. The
-   optimized build compiles out `NS_LOG`, so investigating needs a debug build
-   (`./ns3 configure --build-profile=debug`) and `NS_LOG="AodvRoutingProtocol=level_all|prefix_time|prefix_node"`.
-   Until this is resolved, a corrected-topology sweep cannot be run.
-2. **Result strength.** With the current data the adaptive protocol shows no
-   clear improvement over plain AODV. Only 5 seeds and 40 s runs were used, so
-   the error bars are wide. The one point that looked better (15 dB, lower
-   delay and higher throughput) is weak evidence given 11 thresholds and 4
-   metrics were examined.
-3. **Propagation wording.** `SNR_ADAPTIVE_ROUTING.md` originally described the
-   range model as a hard cutoff giving little warning. The default Yans
-   channel already adds log-distance loss, so SNR does fall gradually with
-   distance; the range model only adds a hard cut at 300 m. Treat the
-   explanation of *why* there was no gain as unproven.
-4. **Debug output.** The simulation prints one stderr line per reroute; at high
+1. **Legacy default: all nodes start at (0,0).** The mobility setup gives
+   `RandomWaypointMobilityModel` a `PositionAllocator`, but that attribute only
+   chooses where nodes walk *to*; the starting position needs
+   `mobility.SetPositionAllocator(...)`, which the original code lacked. Nodes
+   therefore started in the corner and formed a dense cluster (no node more
+   than about 106 m from the origin after 25 s). This is now selectable:
+   `--spreadStart=1` starts nodes at random positions over the area. The
+   default is still 0 (legacy) so that `sweep_results.csv` and
+   `thesis_figures/` reproduce exactly. **Use `--spreadStart=1` for the
+   intended scenario.**
+2. **ns-3 AODV request-queue livelock (worked around).** With spread-out nodes
+   and the ns-3 default `MaxQueueLen` of 64, the simulation stopped advancing
+   at about 18-19 s of simulated time, in conventional mode too (seeds 1 to 6),
+   so it is not caused by our code. Cause, found with a debugger stack of the
+   stuck process and confirmed by experiment:
+   - AODV parks packets without a route in `RequestQueue` (max 64).
+   - When full, `Enqueue` drops the oldest entry; the drop callback calls
+     `Ipv4L3Protocol::RouteInputError`, which now sends an ICMP net-unreachable
+     to the packet's source (`SendIcmpNoRoute`).
+   - For a locally originated packet the source is the node's own address, for
+     which AODV has no valid route, so the ICMP packet is sent through the
+     loopback device with a deferred-route tag.
+   - On loopback receive it is deferred into the still-full queue, which drops
+     the oldest entry again, generating another ICMP message, and so on, all at
+     one simulation time.
+   With `MaxQueueLen` 1000 or 100000 the run completes with identical results,
+   so the queue never fills. The simulation therefore sets the queue length to
+   1000 (`--aodvQueueLen`). This is a workaround: the ns-3 behaviour itself is
+   not patched. A proper fix would avoid sending ICMP errors for locally
+   originated packets (or to a local address) and/or erase the dropped entry
+   before invoking the drop callback in `RequestQueue::Enqueue`.
+3. **The spread layout is sparse.** With `--spreadStart=1` plain AODV delivers
+   only about 13% of packets (per-seed 2% to 26%), so the network is mostly
+   disconnected and delays are large and variable. Gains from adaptive routing
+   are real in relative terms but small in absolute terms. A denser layout
+   (smaller area or more nodes) would be a fairer test.
+4. **Small sample.** 5 seeds and 40 s runs give wide error bars, and 11
+   thresholds were examined, so treat isolated "significant" points with
+   caution. In the spread sweep the effect is consistent across thresholds of
+   13 dB and up, which is stronger evidence than any single point.
+5. **Debug output.** The simulation prints one stderr line per reroute; at high
    thresholds that is thousands of lines per run. Redirect stderr if needed.
-5. **Upstream default for scratch.** `scratch/` is git-ignored upstream, so new
-   scratch files must be added with `git add -f`.
+6. **Upstream default for scratch.** `scratch/` is git-ignored upstream, so new
+   scratch files must be added with `git add -f` when working inside ns-3.
 
 ## 10. Troubleshooting
 
@@ -281,13 +290,13 @@ script must be run from the repository root.
 
 ## 11. Suggested next steps
 
-1. Investigate and resolve issue 1b (debug build with AODV logging), then apply
-   the start-position fix, rerun the sweep, regenerate the figures and update
-   `SNR_ADAPTIVE_ROUTING.md`.
-2. Increase seeds (20 or more) and simulation length.
+1. Try a denser scenario with `--spreadStart=1` (smaller area or more nodes) so
+   the baseline delivery ratio is not so low, and rerun the sweep.
+2. Increase seeds (20 or more) and simulation length; rerun the figures.
 3. Try higher node speeds and different node counts.
 4. Add routing-overhead measurements (RREQ and RERR counts).
-5. Test with a fading model in addition to log-distance loss.
+5. Consider upstreaming a fix for the AODV/ICMP livelock (issue 2 above).
+6. Test with a fading model in addition to log-distance loss.
 
 ## 12. Git notes
 

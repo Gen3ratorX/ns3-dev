@@ -51,9 +51,14 @@ Use the same `--RngRun` for both to get identical mobility and traffic.
 Threshold sweep (10-20 dB, seeds 1-5, about 1-2 minutes) and figures:
 
 ```bash
-python3 utils/snr-threshold-sweep.py           # writes sweep_results.csv
-python3 utils/plot-snr-sweep.py sweep_results.csv .   # overview figures
-python3 utils/plot-snr-thesis.py               # individual figures in thesis_figures/
+# nodes spread over the area (recommended)
+python3 utils/snr-threshold-sweep.py --spreadStart=1 --out=sweep_results_spread.csv
+python3 utils/plot-snr-thesis.py sweep_results_spread.csv thesis_figures_spread
+
+# legacy: all nodes start at (0,0) (default of the simulation)
+python3 utils/snr-threshold-sweep.py               # writes sweep_results.csv
+python3 utils/plot-snr-thesis.py                   # figures in thesis_figures/
+python3 utils/plot-snr-sweep.py sweep_results.csv .   # three overview figures
 ```
 
 Optional NetAnim output: add `--animFile=snr-adaptive.xml` to any run (the
@@ -71,6 +76,8 @@ NetAnim viewer is a separate application).
 | `--lowWindows` | 3 | Consecutive low 1 s windows before rerouting |
 | `--RngRun` | 1 | Random seed |
 | `--animFile` | empty | NetAnim XML output path |
+| `--spreadStart` | 0 | 1 = start nodes at random positions (0 = all nodes start at (0,0), the legacy behaviour) |
+| `--aodvQueueLen` | 1000 | AODV request queue length (ns-3 default 64 can livelock, see known issues) |
 
 ## What is in this repository
 
@@ -80,19 +87,33 @@ NetAnim viewer is a separate application).
 | `patches/aodv-force-link-failure.patch` | Adds `aodv::RoutingProtocol::ForceLinkFailure(nextHop)` |
 | `install.sh` | Overlays our files onto an ns-3 checkout and applies the patch |
 | `utils/` | Sweep and plotting scripts |
-| `sweep_results.csv` | Results of the last sweep (60 runs) |
-| `thesis_figures/` | Individual figures (PDF and PNG) |
+| `sweep_results_spread.csv`, `thesis_figures_spread/` | Sweep results and figures with nodes spread over the area (recommended) |
+| `sweep_results.csv`, `thesis_figures/` | Legacy sweep and figures, all nodes starting at (0,0) |
 | `SNR_ADAPTIVE_ROUTING.md` | Design, results and interpretation |
 | `HANDOVER_GUIDE.md` | Full setup, usage, troubleshooting and known issues |
 
 ## Status and known issues
 
-- With the current data the adaptive protocol shows **no clear improvement**
-  over plain AODV (5 seeds, 30 nodes, 40 s runs).
-- **All nodes currently start at (0,0)** because no starting-position allocator
-  is set, so the results describe a dense cluster, not a 600 x 600 m spread.
-  Adding the start-position line makes stock AODV stall at about 18-19 s of
-  simulated time (cause not yet found), so it has not been applied.
+Results (30 nodes, 40 s, 5 seeds, paired by seed; see
+`SNR_ADAPTIVE_ROUTING.md` for detail):
+
+- **Nodes spread over 600 x 600 m (`--spreadStart=1`):** the adaptive protocol
+  improves packet delivery over plain AODV for thresholds of 13 dB and above
+  (about +2 to +6 percentage points, all 5 seeds improve, 95% confidence
+  intervals exclude zero) and lowers delay. The baseline is very low, though:
+  plain AODV delivers only about 13% of packets because this layout is mostly
+  disconnected, so the absolute gain is small.
+- **Legacy layout (all nodes start at (0,0)):** no clear difference from plain
+  AODV.
+
+Known issues:
+
+- The simulation's default is still the legacy start at (0,0), kept so old
+  results reproduce exactly. Use `--spreadStart=1` for the intended scenario.
+- ns-3's default AODV request queue (64 packets) can livelock the simulation at
+  one simulated time. The simulation works around it by setting the queue to
+  1000; the underlying ns-3 behaviour is not patched.
+- The spread layout is sparse; a denser layout would be a fairer test.
 
 Read `HANDOVER_GUIDE.md`, section 9, before relying on any numbers.
 

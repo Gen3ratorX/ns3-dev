@@ -201,6 +201,10 @@ main (int argc, char *argv[])
   cmd.AddValue ("simTime", "Simulation duration (s)", g_simTime);
   cmd.AddValue ("snrThresholdDb", "SNR re-route threshold (dB)", g_snrThresholdDb);
   cmd.AddValue ("snrAlpha", "EWMA weight of newest SNR sample (0-1]", g_snrAlpha);
+  uint32_t aodvQueueLen = 1000;
+  cmd.AddValue ("aodvQueueLen", "AODV request queue length (default 64 can livelock, see comment)", aodvQueueLen);
+  bool spreadStart = false;
+  cmd.AddValue ("spreadStart", "Start nodes at random positions instead of (0,0)", spreadStart);
   std::string animFile = "";
   cmd.AddValue ("animFile", "NetAnim XML output file (empty = disabled)", animFile);
   cmd.AddValue ("lowWindows", "Consecutive low check windows before rerouting", g_lowWindows);
@@ -252,6 +256,10 @@ main (int argc, char *argv[])
   posAlloc->SetAttribute ("X", PointerValue (xVal));
   posAlloc->SetAttribute ("Y", PointerValue (yVal));
 
+  if (spreadStart)
+    {
+      mobility.SetPositionAllocator (posAlloc);
+    }
   mobility.SetMobilityModel ("ns3::RandomWaypointMobilityModel",
                               "Speed", StringValue ("ns3::UniformRandomVariable[Min=1.0|Max=5.0]"),
                               "Pause", StringValue ("ns3::ConstantRandomVariable[Constant=1.0]"),
@@ -263,6 +271,10 @@ main (int argc, char *argv[])
   AodvHelper aodv;
   // Enable AODV Hello messages to rapidly purge dead routes
   aodv.Set ("EnableHello", BooleanValue (true));
+  // With the ns-3 default (64), a full request queue can livelock at one simulation time:
+  // dropping a locally originated packet sends an ICMP unreachable to the node's own address,
+  // which is itself deferred into the still-full queue, dropped, and answered with another ICMP.
+  aodv.Set ("MaxQueueLen", UintegerValue (aodvQueueLen));
 
   InternetStackHelper internet;
   internet.SetRoutingHelper (aodv);

@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 cp "$HERE/scratch/snr-adaptive-routing.cc" "$NS3/scratch/"
 cp "$HERE"/utils/*.py "$NS3/utils/"
-cp "$HERE/sweep_results.csv" "$NS3/"
+cp "$HERE"/sweep_results*.csv "$NS3/"
 
 if (cd "$NS3" && git apply --check "$HERE/patches/aodv-force-link-failure.patch" 2>/dev/null); then
   (cd "$NS3" && git apply "$HERE/patches/aodv-force-link-failure.patch")
