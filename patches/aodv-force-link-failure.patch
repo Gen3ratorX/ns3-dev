@@ -1,0 +1,42 @@
+diff --git a/src/aodv/model/aodv-routing-protocol.cc b/src/aodv/model/aodv-routing-protocol.cc
+index 8da036d42..cbceb12f3 100644
+--- a/src/aodv/model/aodv-routing-protocol.cc
++++ b/src/aodv/model/aodv-routing-protocol.cc
+@@ -2091,6 +2091,13 @@ RoutingProtocol::SendRerrWhenBreaksLinkToNextHop(Ipv4Address nextHop)
+     m_routingTable.InvalidateRoutesWithDst(unreachable);
+ }
+ 
++void
++RoutingProtocol::ForceLinkFailure(Ipv4Address nextHop)
++{
++    NS_LOG_FUNCTION(this << nextHop);
++    SendRerrWhenBreaksLinkToNextHop(nextHop);
++}
++
+ void
+ RoutingProtocol::SendRerrWhenNoRouteToForward(Ipv4Address dst,
+                                               uint32_t dstSeqNo,
+diff --git a/src/aodv/model/aodv-routing-protocol.h b/src/aodv/model/aodv-routing-protocol.h
+index 4c1a53e50..fb06c22a6 100644
+--- a/src/aodv/model/aodv-routing-protocol.h
++++ b/src/aodv/model/aodv-routing-protocol.h
+@@ -192,6 +192,19 @@ class RoutingProtocol : public Ipv4RoutingProtocol
+      */
+     int64_t AssignStreams(int64_t stream);
+ 
++    /**
++     * @brief Treat the link to a specific next-hop neighbor as broken.
++     *
++     * Invalidates only the routing table entries that use nextHop as their next hop
++     * and triggers RERR generation towards the corresponding precursors, leaving routes
++     * through other neighbors untouched. Intended for external link-quality
++     * instrumentation (e.g. SNR-based monitoring) that detects degradation ahead of
++     * AODV's own MAC-layer ACK-failure detection.
++     *
++     * @param nextHop the neighbor address whose link should be treated as broken
++     */
++    void ForceLinkFailure(Ipv4Address nextHop);
++
+   protected:
+     void DoInitialize() override;
+ 
